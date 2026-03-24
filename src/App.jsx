@@ -17,6 +17,8 @@ const COPY = {
       "Momentum is a focused todo workspace built with React and Shadcn UI components. Everything persists in local storage, so your list is still here when you come back.",
     inputAriaLabel: "New todo",
     inputPlaceholder: "What needs to get done?",
+    dateLabel: "Due date",
+    datePlaceholder: "Select a date",
     addTask: "Add Task",
     languageButton: "中文",
     paceTitle: "Today's pace",
@@ -31,6 +33,11 @@ const COPY = {
     emptyDescription:
       "Add your first task above. It will persist automatically in local storage.",
     deleteTodo: "Delete",
+    noDueDate: "No due date",
+    dueDatePrefix: "Due",
+    today: "Today",
+    overdue: "Overdue",
+    upcoming: "Upcoming",
   },
   zh: {
     badge: "待办事项应用",
@@ -39,6 +46,8 @@ const COPY = {
       "Momentum 是一个用 React 和 Shadcn UI 组件构建的专注型待办页面。所有内容都会保存在本地存储中，下次回来时列表还在。",
     inputAriaLabel: "新的待办事项",
     inputPlaceholder: "你现在要完成什么？",
+    dateLabel: "截止日期",
+    datePlaceholder: "选择日期",
     addTask: "添加任务",
     languageButton: "EN",
     paceTitle: "今日进度",
@@ -52,6 +61,11 @@ const COPY = {
     emptyTitle: "当前没有任务",
     emptyDescription: "在上方添加第一个任务，系统会自动保存到本地存储。",
     deleteTodo: "删除",
+    noDueDate: "未设置日期",
+    dueDatePrefix: "截止",
+    today: "今天",
+    overdue: "已逾期",
+    upcoming: "即将到期",
   },
 };
 
@@ -62,7 +76,22 @@ function readTodos() {
 
   try {
     const saved = window.localStorage.getItem(STORAGE_KEY);
-    return saved ? JSON.parse(saved) : [];
+    if (!saved) {
+      return [];
+    }
+
+    const parsed = JSON.parse(saved);
+    if (!Array.isArray(parsed)) {
+      return [];
+    }
+
+    return parsed.map((todo) => ({
+      id: todo.id ?? crypto.randomUUID(),
+      title: typeof todo.title === "string" ? todo.title : "",
+      completed: Boolean(todo.completed),
+      createdAt: typeof todo.createdAt === "number" ? todo.createdAt : Date.now(),
+      dueDate: typeof todo.dueDate === "string" && todo.dueDate ? todo.dueDate : null,
+    }));
   } catch {
     return [];
   }
@@ -81,9 +110,48 @@ function readLanguage() {
   }
 }
 
+function getTodayDateValue() {
+  return new Date().toLocaleDateString("en-CA");
+}
+
+function getDueDateStatus(dueDate) {
+  if (!dueDate) {
+    return "none";
+  }
+
+  const today = getTodayDateValue();
+  if (dueDate < today) {
+    return "overdue";
+  }
+
+  if (dueDate === today) {
+    return "today";
+  }
+
+  return "upcoming";
+}
+
+function formatDueDate(dueDate, language) {
+  if (!dueDate) {
+    return null;
+  }
+
+  const [year, month, day] = dueDate.split("-").map(Number);
+  if (!year || !month || !day) {
+    return dueDate;
+  }
+
+  return new Intl.DateTimeFormat(language === "zh" ? "zh-CN" : "en-US", {
+    year: "numeric",
+    month: "short",
+    day: "numeric",
+  }).format(new Date(year, month - 1, day));
+}
+
 export default function App() {
   const [todos, setTodos] = useState(() => readTodos());
   const [draft, setDraft] = useState("");
+  const [draftDueDate, setDraftDueDate] = useState("");
   const [language, setLanguage] = useState(() => readLanguage());
 
   const copy = COPY[language];
@@ -120,10 +188,12 @@ export default function App() {
         title,
         completed: false,
         createdAt: Date.now(),
+        dueDate: draftDueDate || null,
       },
       ...current,
     ]);
     setDraft("");
+    setDraftDueDate("");
   }
 
   function toggleTodo(id) {
@@ -178,11 +248,25 @@ export default function App() {
               <form className="flex flex-col gap-3 sm:flex-row" onSubmit={addTodo}>
                 <Input
                   aria-label={copy.inputAriaLabel}
-                  className="h-12 border-slate-200 bg-white/90 text-base"
+                  className="h-12 border-slate-200 bg-white/90 text-base sm:flex-1"
                   onChange={(event) => setDraft(event.target.value)}
                   placeholder={copy.inputPlaceholder}
                   value={draft}
                 />
+                <div className="flex flex-col gap-1">
+                  <label className="text-sm font-medium text-slate-600" htmlFor="todo-due-date">
+                    {copy.dateLabel}
+                  </label>
+                  <Input
+                    className="h-12 border-slate-200 bg-white/90 text-base text-slate-700"
+                    id="todo-due-date"
+                    min={getTodayDateValue()}
+                    onChange={(event) => setDraftDueDate(event.target.value)}
+                    placeholder={copy.datePlaceholder}
+                    type="date"
+                    value={draftDueDate}
+                  />
+                </div>
                 <Button className="h-12 min-w-32 bg-slate-950 text-white hover:bg-slate-800" type="submit">
                   {copy.addTask}
                 </Button>
@@ -257,6 +341,27 @@ export default function App() {
                       >
                         {todo.title}
                       </p>
+                      <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-slate-500">
+                        <span>{todo.dueDate ? `${copy.dueDatePrefix}: ${formatDueDate(todo.dueDate, language)}` : copy.noDueDate}</span>
+                        {todo.dueDate ? (
+                          <Badge
+                            className={
+                              getDueDateStatus(todo.dueDate) === "overdue"
+                                ? "border-rose-200 bg-rose-50 text-rose-700"
+                                : getDueDateStatus(todo.dueDate) === "today"
+                                  ? "border-amber-200 bg-amber-50 text-amber-700"
+                                  : "border-emerald-200 bg-emerald-50 text-emerald-700"
+                            }
+                            variant="outline"
+                          >
+                            {getDueDateStatus(todo.dueDate) === "overdue"
+                              ? copy.overdue
+                              : getDueDateStatus(todo.dueDate) === "today"
+                                ? copy.today
+                                : copy.upcoming}
+                          </Badge>
+                        ) : null}
+                      </div>
                     </div>
                     <Button
                       aria-label={`${copy.deleteTodo} ${todo.title}`}
